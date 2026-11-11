@@ -6,29 +6,25 @@ data class Estimate(
     val ratePercentPerHour: Double?
 )
 
-class Estimator(private val windowMs: Long = 5 * 60_000L) {
+object Estimator {
+    private const val WINDOW_MS = 10 * 60_000L
 
-    private val samples = ArrayDeque<BatteryState>()
-
-    fun add(state: BatteryState): Estimate {
-        samples.addLast(state)
-        while (samples.size > 2 && state.timestampMs - samples.first().timestampMs > windowMs) {
-            samples.removeFirst()
-        }
-
-        val first = samples.first()
-        val dtMs = state.timestampMs - first.timestampMs
-        if (dtMs < 60_000L || first.percent == state.percent) {
+    fun estimate(samples: List<BatteryState>): Estimate {
+        if (samples.size < 2) return Estimate(null, null, null)
+        val last = samples.last()
+        val windowStart = last.timestampMs - WINDOW_MS
+        val window = samples.filter { it.timestampMs >= windowStart }
+        val first = window.firstOrNull() ?: return Estimate(null, null, null)
+        val dtMs = last.timestampMs - first.timestampMs
+        if (dtMs < 60_000L || first.percent == last.percent) {
             return Estimate(null, null, null)
         }
-
-        val ratePerHour = (state.percent - first.percent).toDouble() * 3_600_000.0 / dtMs
-
+        val ratePerHour = (last.percent - first.percent).toDouble() * 3_600_000.0 / dtMs
         return if (ratePerHour > 0) {
-            val toFull = if (state.percent < 100) ((100 - state.percent) / ratePerHour * 60).toLong() else 0L
+            val toFull = if (last.percent < 100) ((100 - last.percent) / ratePerHour * 60).toLong() else 0L
             Estimate(toFull, null, ratePerHour)
         } else {
-            val toEmpty = (state.percent / -ratePerHour * 60).toLong()
+            val toEmpty = (last.percent / -ratePerHour * 60).toLong()
             Estimate(null, toEmpty, ratePerHour)
         }
     }
