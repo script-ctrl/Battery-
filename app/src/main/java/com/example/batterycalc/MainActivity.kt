@@ -1,8 +1,13 @@
 package com.example.batterycalc
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -11,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -27,18 +33,32 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun BatteryScreen() {
     val context = LocalContext.current
-    val estimator = remember { Estimator() }
     var state by remember { mutableStateOf(BatteryReader.read(context)) }
-    var estimate by remember { mutableStateOf(Estimate(null, null, null)) }
+    var samples by remember { mutableStateOf(SampleStore.load(context)) }
+
+    val notifLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        ContextCompat.startForegroundService(context, Intent(context, BatteryService::class.java))
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
-            val s = BatteryReader.read(context)
-            state = s
-            estimate = estimator.add(s)
+            state = BatteryReader.read(context)
+            samples = SampleStore.load(context)
             delay(5_000L)
         }
     }
+
+    val estimate = Estimator.estimate(samples)
 
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
